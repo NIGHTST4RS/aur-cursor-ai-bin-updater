@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: "17 * * * *" # Run every hour, avoid top-of-hour queue spikes
   workflow_dispatch:
+    inputs:
+      force_publish:
+        description: "Force publish to AUR even when versions already match"
+        type: choice
+        options:
+          - "false"
+          - "true"
+        default: "false"
+        required: true
 
 permissions:
   contents: write
@@ -23,6 +32,8 @@ jobs:
 
       - name: Check for updates and generate PKGBUILD
         id: check
+        env:
+          FORCE_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_publish || 'false' }}
         run: |
           set -euo pipefail
           echo "::group::Checking for updates"
@@ -34,11 +45,19 @@ jobs:
 
           # Get current version from AUR
           aur_response=$(curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 30 "https://aur.archlinux.org/rpc/?v=5&type=info&arg[]=cursor-ai-bin")
+          aur_resultcount=0
           aur_pkgver=""
+          aur_exists=false
           if [ -n "$aur_response" ]; then
+            aur_resultcount=$(echo "$aur_response" | jq -r '.resultcount // 0')
+          fi
+          if [ "$aur_resultcount" -gt 0 ]; then
+            aur_exists=true
             aur_pkgver=$(echo "$aur_response" | jq -r '.results[0].Version // empty' | cut -d'-' -f1)
           fi
           echo "AUR version: ${aur_pkgver:-unknown}"
+          echo "AUR package exists: ${aur_exists}"
+          echo "Force publish requested: ${FORCE_PUBLISH}"
 
           # Query the stable update API
           api_response=$(curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 30 "https://api2.cursor.sh/updates/api/update/linux-x64/cursor/0.0.0/deadbeef/stable")
@@ -66,15 +85,28 @@ jobs:
 
           echo "Latest: $new_pkgver (commit: ${new_commit:0:8})"
 
-          # Check if update is needed
-          if [ "$current_pkgver" = "$new_pkgver" ] && [ "$current_commit" = "$new_commit" ] && [ "${aur_pkgver:-$current_pkgver}" = "$new_pkgver" ]; then
+          # Decide whether we need to publish/update.
+          update_reason=""
+          if [ "${FORCE_PUBLISH}" = "true" ]; then
+            update_reason="Manual force publish requested."
+          elif [ "${aur_exists}" != "true" ]; then
+            update_reason="AUR package missing; initial publish required."
+          elif [ "$current_pkgver" != "$new_pkgver" ] || [ "$current_commit" != "$new_commit" ]; then
+            update_reason="Local PKGBUILD is behind latest upstream."
+          elif [ "$aur_pkgver" != "$new_pkgver" ]; then
+            update_reason="AUR version differs from latest upstream."
+          fi
+
+          if [ -z "$update_reason" ]; then
             echo "No update needed. Local and AUR versions match latest."
             echo "update_needed=false" >> $GITHUB_OUTPUT
+            echo "update_reason=Local and AUR versions already match latest upstream." >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          echo "Update needed!"
+          echo "Update needed: $update_reason"
           echo "update_needed=true" >> $GITHUB_OUTPUT
+          echo "update_reason=${update_reason}" >> $GITHUB_OUTPUT
           echo "new_version=${new_pkgver}" >> $GITHUB_OUTPUT
           echo "new_commit=${new_commit}" >> $GITHUB_OUTPUT
           echo "::endgroup::"
@@ -124,7 +156,8 @@ jobs:
 
       - name: Notify if no update needed
         if: steps.check.outputs.update_needed == 'false'
-        run: echo "No update needed. Stopping workflow."
+        run: |
+          echo "No publish needed: ${{ steps.check.outputs.update_reason }}"
 
       - name: Commit changes
         if: steps.check.outputs.update_needed == 'true'
@@ -180,6 +213,7 @@ jobs:
         run: |
           echo "::group::Workflow Summary"
           echo "Update needed: ${{ steps.check.outputs.update_needed }}"
+          echo "Reason: ${{ steps.check.outputs.update_reason }}"
           echo "New version: ${{ steps.check.outputs.new_version }}"
           echo "New commit: ${{ steps.check.outputs.new_commit }}"
           if [ "${{ steps.check.outputs.update_needed }}" = "true" ]; then
