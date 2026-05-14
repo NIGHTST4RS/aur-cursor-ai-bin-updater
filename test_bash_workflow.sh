@@ -150,6 +150,13 @@ else
     echo "✓ sha512sum is correct"
 fi
 
+if ! grep -q "^install=cursor-ai-bin.install$" PKGBUILD.test; then
+    echo "❌ ERROR: install script not wired in PKGBUILD!"
+    VALIDATION_FAILED=1
+else
+    echo "✓ install script hook is present"
+fi
+
 # Check for ripgrep dependency
 if ! grep -q "ripgrep" PKGBUILD.test; then
     echo "❌ ERROR: ripgrep dependency missing!"

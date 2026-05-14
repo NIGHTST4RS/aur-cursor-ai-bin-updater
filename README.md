@@ -30,6 +30,8 @@ cd cursor-ai-bin
 makepkg -si
 ```
 
+After install/update, pacman prints a short package message with the AUR page URL for support and issue reporting.
+
 ## Repository layout
 
 | File | Purpose |
