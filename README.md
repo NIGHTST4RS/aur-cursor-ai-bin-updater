@@ -30,6 +30,8 @@ cd cursor-ai-bin
 makepkg -si
 ```
 
+After install/update, pacman prints a short package message with the AUR page URL for support and issue reporting.
+
 ## Repository layout
 
 | File | Purpose |
@@ -48,14 +50,14 @@ makepkg -si
 4. Regenerate `PKGBUILD` from `PKGBUILD.sed`.
 5. Validate generated fields.
 6. Commit to the repo branch.
-7. Publish to AUR (on `main`; skipped on `development`).
+7. Publish to AUR (on `main`; skipped on `dev`).
 
 When triggered manually, `workflow_dispatch` also supports `force_publish=true` to publish even if versions already match.
 The workflow also auto-publishes when the AUR package does not exist yet (initial bootstrap).
 
 ## Branch behavior
 
-- `development`: update + validation only, no AUR publish.
+- `dev`: update + validation only, no AUR publish.
 - `main`: update + AUR publish.
 
 ## Local testing
@@ -120,9 +122,9 @@ If T3 Code still fails:
 ## Contributing
 
 1. Fork the repository.
-2. Create a branch from `development`.
+2. Create a branch from `dev`.
 3. Run `./test_bash_workflow.sh`.
-4. Open a PR against `development`.
+4. Open a PR against `dev`.
 
 ## Links
 
